@@ -1,0 +1,28 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+/*
+ * The phone build is wrapped in a native WebView, so the page should read as
+ * an app screen rather than a browser tab: no rubber-band scroll past the
+ * content, no blue tap flash on buttons/links, and text stays selectable
+ * only where it's actually meant to be read.
+ */
+html {
+    overscroll-behavior-y: contain;
+}
+
+body {
+    -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+    touch-action: manipulation;
+}

@@ -1,0 +1,305 @@
+<?php
+
+namespace App\Services;
+
+use App\Support\LevelResolver;
+use Illuminate\Support\Facades\Log;
+use OpenAI\Laravel\Facades\OpenAI;
+use RuntimeException;
+
+class CourseGeneratorService
+{
+    public function generatePlacementQuestions(string $topic): array
+    {
+        $count = config('course.placement_question_count');
+
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'questions' => [
+                    'type' => 'array',
+                    'minItems' => $count,
+                    'maxItems' => $count,
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'question' => ['type' => 'string'],
+                            'options' => [
+                                'type' => 'array',
+                                'minItems' => 4,
+                                'maxItems' => 4,
+                                'items' => ['type' => 'string'],
+                            ],
+                            'correct_option' => ['type' => 'string'],
+                        ],
+                        'required' => ['question', 'options', 'correct_option'],
+                        'additionalProperties' => false,
+                    ],
+                ],
+            ],
+            'required' => ['questions'],
+            'additionalProperties' => false,
+        ];
+
+        $instructions = <<<TEXT
+Ты — эксперт по составлению входных тестов для образовательной платформы.
+Составь {$count} вопросов с 4 вариантами ответа, чтобы определить текущий уровень
+знаний ученика по теме "{$topic}" — от полного новичка до продвинутого специалиста.
+Вопросы должны идти от простых к сложным. Поле correct_option должно дословно
+совпадать с одним из вариантов в options. Пиши на русском языке.
+TEXT;
+
+        $data = $this->requestStructured($instructions, 'placement_test', $schema);
+
+        return $data['questions'];
+    }
+
+    public function generateRoadmap(string $topic, string $level): array
+    {
+        ['min' => $min, 'max' => $max] = $this->roadmapStepBounds($level);
+        $levelLabel = LevelResolver::label($level);
+        $startingPoint = $this->roadmapStartingPoint($level);
+
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'title' => ['type' => 'string'],
+                'summary' => ['type' => 'string'],
+                'steps' => [
+                    'type' => 'array',
+                    'minItems' => $min,
+                    'maxItems' => $max,
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'title' => ['type' => 'string'],
+                            'description' => ['type' => 'string'],
+                            'requires_test' => ['type' => 'boolean'],
+                            'estimated_days' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 5],
+                            'resources' => [
+                                'type' => 'array',
+                                'minItems' => 1,
+                                'maxItems' => 4,
+                                'items' => [
+                                    'type' => 'object',
+                                    'properties' => [
+                                        'title' => ['type' => 'string'],
+                                        'url' => ['type' => 'string'],
+                                        'type' => [
+                                            'type' => 'string',
+                                            'enum' => ['article', 'video', 'docs', 'other'],
+                                        ],
+                                    ],
+                                    'required' => ['title', 'url', 'type'],
+                                    'additionalProperties' => false,
+                                ],
+                            ],
+                        ],
+                        'required' => ['title', 'description', 'requires_test', 'estimated_days', 'resources'],
+                        'additionalProperties' => false,
+                    ],
+                ],
+            ],
+            'required' => ['title', 'summary', 'steps'],
+            'additionalProperties' => false,
+        ];
+
+        $instructions = <<<TEXT
+Ты — методист образовательной платформы. Составь подробную пошаговую дорожную
+карту обучения теме "{$topic}" для ученика с уровнем "{$levelLabel}".
+
+{$startingPoint}
+
+Дорожная карта — это полный маршрут от текущего уровня ученика до уверенного
+практического владения темой. Она должна содержать от {$min} до {$max} шагов и
+закрывать весь путь без пробелов: пройдя все шаги по порядку, ученик должен
+уметь самостоятельно решать реальные задачи по этой теме.
+
+Как строить маршрут:
+- Раздели тему на последовательные тематические блоки (подготовка и необходимые
+  предварительные знания, база, ядро темы, продвинутые разделы, практика) и
+  раскрой каждый блок несколькими шагами.
+- Один шаг — одна конкретная узкая подтема, которую можно освоить за один
+  подход. Названия вида «Изучить всё про X» или «Основы X» означают слишком
+  крупный шаг: разбивай такие шаги на отдельные по каждому ключевому понятию,
+  инструменту или приёму.
+- Если в названии шага приходится перечислять несколько понятий через «и» или
+  запятую — это признак, что шаг нужно разделить на несколько.
+- Шаги идут строго от простого к сложному, каждый опирается только на то, что
+  уже разобрано в предыдущих шагах. Ни один шаг не должен требовать знаний,
+  которые появляются дальше по маршруту.
+- Не пропускай подготовительные шаги: установка и настройка инструментов,
+  терминология и смежные знания, без которых дальше продвинуться нельзя.
+- Последние шаги посвяти закреплению: самостоятельные практические задания и
+  небольшие проекты, объединяющие изученное.
+- Не повторяй одну и ту же подтему в разных шагах.
+
+Для каждого шага укажи:
+- title — короткое конкретное название подтемы.
+- description — 2-4 предложения: что именно разбирается в шаге и что ученик
+  сможет делать после него.
+- resources — 1-4 ссылки на реальные, широко известные источники (официальная
+  документация, известные бесплатные курсы, авторитетные статьи и видео).
+  Не выдумывай ссылки, которых не существует.
+- estimated_days — сколько календарных дней реально займёт у ученика с уровнем
+  "{$levelLabel}" этот шаг при обычном темпе занятий (немного времени в день,
+  а не весь день подряд): обычно 1-3 дня, до 5 для особенно ёмких шагов.
+- requires_test — true для шагов, которые завершают тематический блок или на
+  которых важно проверить усвоение ключевого материала: примерно каждый третий
+  шаг, включая последний шаг маршрута.
+
+В поле title укажи название маршрута, в summary — 2-3 предложения о том, для
+кого этот маршрут и к какому результату он приводит.
+Пиши на русском языке.
+TEXT;
+
+        return $this->requestStructured($instructions, 'course_roadmap', $schema);
+    }
+
+    /**
+     * @return array{min: int, max: int}
+     */
+    private function roadmapStepBounds(string $level): array
+    {
+        $bounds = config('course.roadmap_steps');
+
+        return $bounds[$level] ?? $bounds['beginner'];
+    }
+
+    /**
+     * Describes what the student already knows, so the model neither re-teaches
+     * the basics nor skips over the foundation a beginner is missing.
+     */
+    private function roadmapStartingPoint(string $level): string
+    {
+        return match ($level) {
+            'advanced' => 'Ученик уверенно владеет базой и имеет практический опыт. Пропусти вводные и базовые разделы и построй маршрут вокруг сложных тем, тонкостей, оптимизации, продвинутых инструментов и задач профессионального уровня.',
+            'intermediate' => 'Ученик знаком с базовыми понятиями темы и имеет небольшой практический опыт. Не трать шаги на объяснение азов: ограничься кратким повторением базы в первых одном-двух шагах и сосредоточься на ядре темы, её более сложных разделах и практике.',
+            default => 'Ученик начинает с полного нуля: он не знаком с темой, не знает её терминологии и не имеет никакого опыта. Начни маршрут с самых азов — что это за область, зачем она нужна и из чего состоит — и разбирай базовые понятия мелкими шагами, каждое понятие отдельно, прежде чем переходить к более сложным разделам. Обязательно включи подготовительные шаги по смежным знаниям и инструментам, без которых тему не освоить.',
+        };
+    }
+
+    public function generateStepQuestions(string $topic, string $stepTitle, string $stepDescription): array
+    {
+        $count = config('course.step_question_count');
+
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'questions' => [
+                    'type' => 'array',
+                    'minItems' => $count,
+                    'maxItems' => $count,
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'question' => ['type' => 'string'],
+                            'options' => [
+                                'type' => 'array',
+                                'minItems' => 4,
+                                'maxItems' => 4,
+                                'items' => ['type' => 'string'],
+                            ],
+                            'correct_option' => ['type' => 'string'],
+                        ],
+                        'required' => ['question', 'options', 'correct_option'],
+                        'additionalProperties' => false,
+                    ],
+                ],
+            ],
+            'required' => ['questions'],
+            'additionalProperties' => false,
+        ];
+
+        $instructions = <<<TEXT
+Ты составляешь проверочный тест для шага "{$stepTitle}" курса по теме "{$topic}".
+Описание шага: {$stepDescription}
+Составь {$count} вопроса с 4 вариантами ответа, проверяющих понимание именно
+материала этого шага. Поле correct_option должно дословно совпадать с одним
+из вариантов в options. Пиши на русском языке.
+TEXT;
+
+        $data = $this->requestStructured($instructions, 'step_test', $schema);
+
+        return $data['questions'];
+    }
+
+    public function answerStepQuestion(string $topic, string $stepTitle, string $stepDescription, array $history, string $question): string
+    {
+        $instructions = <<<TEXT
+Ты — ИИ-репетитор образовательной платформы. Ученик проходит курс по теме
+"{$topic}" и сейчас находится на шаге "{$stepTitle}". Описание шага: {$stepDescription}
+Отвечай только на вопросы, связанные с этим шагом и темой курса. Объясняй понятно
+и по существу, используй примеры кода при необходимости, не пиши лишнего.
+Если вопрос не относится к теме шага, вежливо верни ученика к теме. Отвечай
+на русском языке.
+TEXT;
+
+        $input = [];
+
+        foreach ($history as $message) {
+            $input[] = [
+                'role' => $message['role'],
+                'content' => $message['content'],
+            ];
+        }
+
+        $input[] = ['role' => 'user', 'content' => $question];
+
+        $response = OpenAI::responses()->create([
+            'model' => config('course.model'),
+            'instructions' => $instructions,
+            'input' => $input,
+        ]);
+
+        if ($response->outputText === null || trim($response->outputText) === '') {
+            Log::error('CourseGeneratorService empty chat response', ['step' => $stepTitle]);
+
+            throw new RuntimeException('Пустой ответ от модели.');
+        }
+
+        return trim($response->outputText);
+    }
+
+    private function requestStructured(string $instructions, string $schemaName, array $schema): array
+    {
+        $response = OpenAI::responses()->create([
+            'model' => config('course.model'),
+            'instructions' => $instructions,
+            'input' => 'Сгенерируй результат строго в соответствии со схемой.',
+            'text' => [
+                'format' => [
+                    'type' => 'json_schema',
+                    'name' => $schemaName,
+                    'schema' => $schema,
+                    'strict' => true,
+                ],
+            ],
+        ]);
+
+        if ($response->status === 'incomplete') {
+            Log::error('CourseGeneratorService incomplete response', [
+                'schema' => $schemaName,
+                'reason' => $response->incompleteDetails?->reason,
+            ]);
+
+            throw new RuntimeException('Модель генерации не успела закончить ответ.');
+        }
+
+        if ($response->outputText === null || $response->outputText === '') {
+            Log::error('CourseGeneratorService empty response', ['schema' => $schemaName]);
+
+            throw new RuntimeException('Пустой ответ от модели генерации.');
+        }
+
+        $data = json_decode($response->outputText, true);
+
+        if (! is_array($data)) {
+            Log::error('CourseGeneratorService invalid json', ['schema' => $schemaName, 'raw' => $response->outputText]);
+
+            throw new RuntimeException('Некорректный ответ от модели генерации.');
+        }
+
+        return $data;
+    }
+}
