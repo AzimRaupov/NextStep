@@ -123,6 +123,9 @@ export const messages = {
             resource_video: 'Видео',
             resource_docs: 'Документация',
             resource_other: 'Материал',
+            current_step_badge: 'Текущий шаг',
+            test_required_badge: 'С тестом',
+            module_progress: '{completed}/{total} уроков',
         },
         placement_test: {
             loading: 'Загрузка…',
@@ -154,6 +157,9 @@ export const messages = {
             submitting: 'Проверяем…',
             answer_all_error: 'Ответьте на все вопросы.',
             submit_error: 'Не удалось отправить ответы. Попробуйте ещё раз.',
+            review_title: 'Разбор ответов',
+            your_answer: 'Ваш ответ',
+            correct_answer: 'Правильный ответ',
         },
         chat: {
             header_label: 'ИИ-репетитор',
@@ -291,6 +297,9 @@ export const messages = {
             resource_video: 'Video',
             resource_docs: 'Docs',
             resource_other: 'Resource',
+            current_step_badge: 'Current step',
+            test_required_badge: 'Includes a test',
+            module_progress: '{completed}/{total} lessons',
         },
         placement_test: {
             loading: 'Loading…',
@@ -322,6 +331,9 @@ export const messages = {
             submitting: 'Checking…',
             answer_all_error: 'Please answer every question.',
             submit_error: 'Could not submit your answers. Please try again.',
+            review_title: 'Answer review',
+            your_answer: 'Your answer',
+            correct_answer: 'Correct answer',
         },
         chat: {
             header_label: 'AI tutor',
@@ -459,6 +471,9 @@ export const messages = {
             resource_video: 'Видео',
             resource_docs: 'Ҳуҷҷат',
             resource_other: 'Маводи ёрирасон',
+            current_step_badge: 'Қадами ҷорӣ',
+            test_required_badge: 'Бо тест',
+            module_progress: '{completed}/{total} дарс',
         },
         placement_test: {
             loading: 'Боргирӣ…',
@@ -490,6 +505,9 @@ export const messages = {
             submitting: 'Месанҷем…',
             answer_all_error: 'Ба ҳамаи саволҳо ҷавоб диҳед.',
             submit_error: 'Ҷавобҳо фиристода нашуданд. Лутфан бори дигар кӯшиш кунед.',
+            review_title: 'Баррасии ҷавобҳо',
+            your_answer: 'Ҷавоби шумо',
+            correct_answer: 'Ҷавоби дуруст',
         },
         chat: {
             header_label: 'Муаллими ИИ',

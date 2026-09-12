@@ -48,7 +48,6 @@ class StepChatController extends Controller
             $step->description,
             $history,
             $userMessage->content,
-            $request->user()->id,
         );
 
         $assistantMessage = $step->chatMessages()->create([

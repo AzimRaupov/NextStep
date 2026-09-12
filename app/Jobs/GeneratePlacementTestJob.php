@@ -27,14 +27,17 @@ class GeneratePlacementTestJob implements ShouldQueue
             return;
         }
 
-        $questions = $generator->generatePlacementQuestions($course->topic, $course->user_id);
+        $questions = $generator->generatePlacementQuestions($course->topic);
 
         DB::transaction(function () use ($course, $questions) {
             foreach ($questions as $index => $question) {
+                $options = $question['options'];
+                shuffle($options);
+
                 $course->placementTest->questions()->create([
                     'order' => $index + 1,
                     'question' => $question['question'],
-                    'options' => $question['options'],
+                    'options' => $options,
                     'correct_option' => $question['correct_option'],
                 ]);
             }

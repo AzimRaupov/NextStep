@@ -45,6 +45,7 @@ class StepTestController extends Controller
 
         $correctCount = 0;
         $answersSnapshot = [];
+        $review = [];
 
         foreach ($request->validated('answers') as $answer) {
             $question = $stepTest->questions->firstWhere('id', $answer['question_id']);
@@ -56,10 +57,22 @@ class StepTestController extends Controller
                 'is_correct' => $isCorrect,
             ];
 
+            $review[] = [
+                'question_id' => $question->id,
+                'order' => $question->order,
+                'question' => $question->question,
+                'options' => $question->options,
+                'selected_option' => $answer['selected_option'],
+                'correct_option' => $question->correct_option,
+                'is_correct' => $isCorrect,
+            ];
+
             if ($isCorrect) {
                 $correctCount++;
             }
         }
+
+        usort($review, fn (array $a, array $b): int => $a['order'] <=> $b['order']);
 
         $total = $stepTest->questions->count();
         $scorePercent = (int) round($correctCount / $total * 100);
@@ -84,6 +97,7 @@ class StepTestController extends Controller
             'passed' => $passed,
             'correct_count' => $correctCount,
             'total' => $total,
+            'review' => $review,
         ]);
     }
 }

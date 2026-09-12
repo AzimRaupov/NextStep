@@ -14,6 +14,7 @@ class CourseStep extends Model
 
     protected $fillable = [
         'course_id',
+        'parent_id',
         'order',
         'title',
         'description',
@@ -35,6 +36,41 @@ class CourseStep extends Model
         return $this->belongsTo(Course::class);
     }
 
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(CourseStep::class, 'parent_id');
+    }
+
+    /**
+     * A course step is either a parent (a section grouping the roadmap into
+     * a topical block) or a child (the actual actionable lesson a student
+     * works through). Only children carry resources, tests, and progress.
+     */
+    public function children(): HasMany
+    {
+        return $this->hasMany(CourseStep::class, 'parent_id')->orderBy('order');
+    }
+
+    public function isParent(): bool
+    {
+        return $this->parent_id === null;
+    }
+
+    public function computedStatus(): string
+    {
+        if (! $this->isParent()) {
+            return $this->status;
+        }
+
+        $childStatuses = $this->children->pluck('status');
+
+        return match (true) {
+            $childStatuses->isNotEmpty() && $childStatuses->every(fn (string $status) => $status === 'completed') => 'completed',
+            $childStatuses->contains(fn (string $status) => in_array($status, ['available', 'completed'], true)) => 'available',
+            default => 'locked',
+        };
+    }
+
     public function resources(): HasMany
     {
         return $this->hasMany(StepResource::class);
@@ -54,7 +90,9 @@ class CourseStep extends Model
     {
         $this->update(['status' => 'completed', 'completed_at' => now()]);
 
-        $nextStep = $this->course->steps()->where('order', $this->order + 1)->first();
+        $flattened = $this->course->flattenedChildSteps();
+        $currentIndex = $flattened->search(fn (self $step) => $step->id === $this->id);
+        $nextStep = $currentIndex === false ? null : $flattened->get($currentIndex + 1);
 
         if ($nextStep && $nextStep->status === 'locked') {
             $nextStep->update(['status' => 'available', 'started_at' => now()]);
