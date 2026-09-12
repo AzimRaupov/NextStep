@@ -14,6 +14,7 @@ class CourseStepController extends Controller
     {
         Gate::authorize('view', $course);
 
+        abort_if($step->isParent(), 404);
         abort_if($step->requires_test, 422, 'Этот шаг завершается прохождением теста.');
 
         $step->markCompleted();

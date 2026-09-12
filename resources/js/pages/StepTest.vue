@@ -78,6 +78,18 @@ async function submit() {
 function backToRoadmap() {
     router.push(`/courses/${courseId}`);
 }
+
+function optionClass(item, option) {
+    if (option === item.correct_option) {
+        return 'border-emerald-300 bg-emerald-50 text-emerald-800';
+    }
+
+    if (option === item.selected_option) {
+        return 'border-red-300 bg-red-50 text-red-700';
+    }
+
+    return 'border-neutral-200 text-neutral-500';
+}
 </script>
 
 <template>
@@ -106,6 +118,32 @@ function backToRoadmap() {
                     {{ result.passed ? t('step_test.passed') : t('step_test.failed_result') }}
                 </p>
                 <p class="mt-1 text-xs text-neutral-400">{{ t('step_test.correct_count', { correct: result.correct_count, total: result.total }) }}</p>
+
+                <div v-if="result.review?.length" class="mt-10 space-y-6 text-left">
+                    <h2 class="text-sm font-medium text-neutral-900">{{ t('step_test.review_title') }}</h2>
+
+                    <div
+                        v-for="item in result.review"
+                        :key="item.question_id"
+                        class="rounded-lg border p-4"
+                        :class="item.is_correct ? 'border-neutral-200' : 'border-red-200 bg-red-50/40'"
+                    >
+                        <p class="text-sm font-medium text-neutral-900">{{ item.order }}. {{ item.question }}</p>
+
+                        <div class="mt-3 space-y-1.5">
+                            <div
+                                v-for="option in item.options"
+                                :key="option"
+                                class="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                                :class="optionClass(item, option)"
+                            >
+                                <span>{{ option }}</span>
+                                <span v-if="option === item.correct_option" class="text-xs font-medium">{{ t('step_test.correct_answer') }}</span>
+                                <span v-else-if="option === item.selected_option" class="text-xs font-medium">{{ t('step_test.your_answer') }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <button
                     class="mt-8 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800"

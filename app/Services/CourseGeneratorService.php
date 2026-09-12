@@ -2,17 +2,14 @@
 
 namespace App\Services;
 
-use App\Models\AiRequest;
 use App\Support\LevelResolver;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
-use OpenAI\Responses\Meta\MetaInformation;
-use OpenAI\Responses\Responses\CreateResponse;
 use RuntimeException;
 
 class CourseGeneratorService
 {
-    public function generatePlacementQuestions(string $topic, int $userId): array
+    public function generatePlacementQuestions(string $topic): array
     {
         $count = config('course.placement_question_count');
 
@@ -52,119 +49,146 @@ class CourseGeneratorService
 совпадать с одним из вариантов в options. Пиши на русском языке.
 TEXT;
 
-        $data = $this->requestStructured($instructions, 'placement_test', $schema, $userId);
+        $data = $this->requestStructured($instructions, 'placement_test', $schema);
 
         return $data['questions'];
     }
 
-    public function generateRoadmap(string $topic, string $level, int $userId): array
+    public function generateRoadmap(string $topic, string $level): array
     {
-        ['min' => $min, 'max' => $max] = $this->roadmapStepBounds($level);
+        ['min' => $minModules, 'max' => $maxModules] = $this->roadmapModuleBounds($level);
+        ['min' => $minSteps, 'max' => $maxSteps] = config('course.module_steps');
         $levelLabel = LevelResolver::label($level);
         $startingPoint = $this->roadmapStartingPoint($level);
+
+        $stepSchema = [
+            'type' => 'object',
+            'properties' => [
+                'title' => ['type' => 'string'],
+                'description' => ['type' => 'string'],
+                'requires_test' => ['type' => 'boolean'],
+                'estimated_days' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 5],
+                'resources' => [
+                    'type' => 'array',
+                    'minItems' => 1,
+                    'maxItems' => 4,
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'title' => ['type' => 'string'],
+                            'url' => ['type' => 'string'],
+                            'type' => [
+                                'type' => 'string',
+                                'enum' => ['article', 'video', 'docs', 'other'],
+                            ],
+                        ],
+                        'required' => ['title', 'url', 'type'],
+                        'additionalProperties' => false,
+                    ],
+                ],
+            ],
+            'required' => ['title', 'description', 'requires_test', 'estimated_days', 'resources'],
+            'additionalProperties' => false,
+        ];
 
         $schema = [
             'type' => 'object',
             'properties' => [
                 'title' => ['type' => 'string'],
                 'summary' => ['type' => 'string'],
-                'steps' => [
+                'modules' => [
                     'type' => 'array',
-                    'minItems' => $min,
-                    'maxItems' => $max,
+                    'minItems' => $minModules,
+                    'maxItems' => $maxModules,
                     'items' => [
                         'type' => 'object',
                         'properties' => [
                             'title' => ['type' => 'string'],
                             'description' => ['type' => 'string'],
-                            'requires_test' => ['type' => 'boolean'],
-                            'estimated_days' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 5],
-                            'resources' => [
+                            'steps' => [
                                 'type' => 'array',
-                                'minItems' => 1,
-                                'maxItems' => 4,
-                                'items' => [
-                                    'type' => 'object',
-                                    'properties' => [
-                                        'title' => ['type' => 'string'],
-                                        'url' => ['type' => 'string'],
-                                        'type' => [
-                                            'type' => 'string',
-                                            'enum' => ['article', 'video', 'docs', 'other'],
-                                        ],
-                                    ],
-                                    'required' => ['title', 'url', 'type'],
-                                    'additionalProperties' => false,
-                                ],
+                                'minItems' => $minSteps,
+                                'maxItems' => $maxSteps,
+                                'items' => $stepSchema,
                             ],
                         ],
-                        'required' => ['title', 'description', 'requires_test', 'estimated_days', 'resources'],
+                        'required' => ['title', 'description', 'steps'],
                         'additionalProperties' => false,
                     ],
                 ],
             ],
-            'required' => ['title', 'summary', 'steps'],
+            'required' => ['title', 'summary', 'modules'],
             'additionalProperties' => false,
         ];
 
         $instructions = <<<TEXT
-Ты — методист образовательной платформы. Составь подробную пошаговую дорожную
-карту обучения теме "{$topic}" для ученика с уровнем "{$levelLabel}".
+Ты — методист образовательной платформы. Составь подробную дорожную карту
+обучения теме "{$topic}" для ученика с уровнем "{$levelLabel}".
 
 {$startingPoint}
 
 Дорожная карта — это полный маршрут от текущего уровня ученика до уверенного
-практического владения темой. Она должна содержать от {$min} до {$max} шагов и
-закрывать весь путь без пробелов: пройдя все шаги по порядку, ученик должен
-уметь самостоятельно решать реальные задачи по этой теме.
+практического владения темой, без пробелов: пройдя всё по порядку, ученик
+должен уметь самостоятельно решать реальные задачи по этой теме.
 
-Как строить маршрут:
-- Раздели тему на последовательные тематические блоки (подготовка и необходимые
-  предварительные знания, база, ядро темы, продвинутые разделы, практика) и
-  раскрой каждый блок несколькими шагами.
-- Один шаг — одна конкретная узкая подтема, которую можно освоить за один
-  подход. Названия вида «Изучить всё про X» или «Основы X» означают слишком
-  крупный шаг: разбивай такие шаги на отдельные по каждому ключевому понятию,
-  инструменту или приёму.
-- Если в названии шага приходится перечислять несколько понятий через «и» или
-  запятую — это признак, что шаг нужно разделить на несколько.
-- Шаги идут строго от простого к сложному, каждый опирается только на то, что
-  уже разобрано в предыдущих шагах. Ни один шаг не должен требовать знаний,
-  которые появляются дальше по маршруту.
-- Не пропускай подготовительные шаги: установка и настройка инструментов,
+Маршрут состоит из разделов (родительских шагов), а каждый раздел — из
+последовательных уроков (дочерних шагов). Раздели маршрут на {$minModules}-{$maxModules}
+разделов, каждый раздел раскрой {$minSteps}-{$maxSteps} уроками.
+
+Как строить разделы:
+- Раздел — это законченный тематический блок (подготовка и необходимые
+  предварительные знания, база, ядро темы, продвинутые разделы, практика).
+- Разделы идут строго от простого к сложному: каждый следующий опирается
+  только на то, что уже разобрано в предыдущих.
+- Не пропускай подготовительные разделы: установка и настройка инструментов,
   терминология и смежные знания, без которых дальше продвинуться нельзя.
-- Последние шаги посвяти закреплению: самостоятельные практические задания и
-  небольшие проекты, объединяющие изученное.
-- Не повторяй одну и ту же подтему в разных шагах.
+- Последний раздел посвяти закреплению: самостоятельные практические задания
+  и небольшие проекты, объединяющие изученное.
 
-Для каждого шага укажи:
+Как строить уроки внутри раздела:
+- Один урок — одна конкретная узкая подтема, которую можно освоить за один
+  подход. Названия вида «Изучить всё про X» или «Основы X» означают слишком
+  крупный урок: разбивай такие уроки на отдельные по каждому ключевому
+  понятию, инструменту или приёму.
+- Если в названии урока приходится перечислять несколько понятий через «и»
+  или запятую — это признак, что урок нужно разделить на несколько.
+- Уроки внутри раздела и разделы между собой идут строго от простого к
+  сложному. Ни один урок не должен требовать знаний, которые появляются
+  дальше по маршруту.
+- Не повторяй одну и ту же подтему в разных уроках.
+
+Для каждого раздела укажи:
+- title — короткое название раздела.
+- description — 1-2 предложения о том, что охватывает раздел.
+
+Для каждого урока укажи:
 - title — короткое конкретное название подтемы.
-- description — 2-4 предложения: что именно разбирается в шаге и что ученик
+- description — 2-4 предложения: что именно разбирается в уроке и что ученик
   сможет делать после него.
 - resources — 1-4 ссылки на реальные, широко известные источники (официальная
   документация, известные бесплатные курсы, авторитетные статьи и видео).
   Не выдумывай ссылки, которых не существует.
 - estimated_days — сколько календарных дней реально займёт у ученика с уровнем
-  "{$levelLabel}" этот шаг при обычном темпе занятий (немного времени в день,
-  а не весь день подряд): обычно 1-3 дня, до 5 для особенно ёмких шагов.
-- requires_test — true для шагов, которые завершают тематический блок или на
-  которых важно проверить усвоение ключевого материала: примерно каждый третий
-  шаг, включая последний шаг маршрута.
+  "{$levelLabel}" этот урок при обычном темпе занятий (немного времени в день,
+  а не весь день подряд): обычно 1-3 дня, до 5 для особенно ёмких уроков.
+- requires_test — true для уроков, которые завершают раздел или на которых
+  важно проверить усвоение ключевого материала: как минимум последний урок
+  каждого раздела.
 
 В поле title укажи название маршрута, в summary — 2-3 предложения о том, для
 кого этот маршрут и к какому результату он приводит.
 Пиши на русском языке.
 TEXT;
 
-        return $this->requestStructured($instructions, 'course_roadmap', $schema, $userId);
+        return $this->requestStructured($instructions, 'course_roadmap', $schema);
     }
 
     /**
      * @return array{min: int, max: int}
      */
-    private function roadmapStepBounds(string $level): array
+    private function roadmapModuleBounds(string $level): array
     {
-        $bounds = config('course.roadmap_steps');
+        $bounds = config('course.roadmap_modules');
 
         return $bounds[$level] ?? $bounds['beginner'];
     }
@@ -182,7 +206,7 @@ TEXT;
         };
     }
 
-    public function generateStepQuestions(string $topic, string $stepTitle, string $stepDescription, int $userId): array
+    public function generateStepQuestions(string $topic, string $stepTitle, string $stepDescription): array
     {
         $count = config('course.step_question_count');
 
@@ -222,12 +246,12 @@ TEXT;
 из вариантов в options. Пиши на русском языке.
 TEXT;
 
-        $data = $this->requestStructured($instructions, 'step_test', $schema, $userId);
+        $data = $this->requestStructured($instructions, 'step_test', $schema);
 
         return $data['questions'];
     }
 
-    public function answerStepQuestion(string $topic, string $stepTitle, string $stepDescription, array $history, string $question, int $userId): string
+    public function answerStepQuestion(string $topic, string $stepTitle, string $stepDescription, array $history, string $question): string
     {
         $instructions = <<<TEXT
 Ты — ИИ-репетитор образовательной платформы. Ученик проходит курс по теме
@@ -249,11 +273,11 @@ TEXT;
 
         $input[] = ['role' => 'user', 'content' => $question];
 
-        $response = $this->createResponse([
+        $response = OpenAI::responses()->create([
             'model' => config('course.model'),
             'instructions' => $instructions,
             'input' => $input,
-        ], $userId);
+        ]);
 
         if ($response->outputText === null || trim($response->outputText) === '') {
             Log::error('CourseGeneratorService empty chat response', ['step' => $stepTitle]);
@@ -264,9 +288,9 @@ TEXT;
         return trim($response->outputText);
     }
 
-    private function requestStructured(string $instructions, string $schemaName, array $schema, int $userId): array
+    private function requestStructured(string $instructions, string $schemaName, array $schema): array
     {
-        $response = $this->createResponse([
+        $response = OpenAI::responses()->create([
             'model' => config('course.model'),
             'instructions' => $instructions,
             'input' => 'Сгенерируй результат строго в соответствии со схемой.',
@@ -278,7 +302,7 @@ TEXT;
                     'strict' => true,
                 ],
             ],
-        ], $userId);
+        ]);
 
         if ($response->status === 'incomplete') {
             Log::error('CourseGeneratorService incomplete response', [
@@ -304,59 +328,5 @@ TEXT;
         }
 
         return $data;
-    }
-
-    /**
-     * @param  array<string, mixed>  $params
-     */
-    private function createResponse(array $params, int $userId): CreateResponse
-    {
-        if (config('ai.request_mode') !== 'client') {
-            return OpenAI::responses()->create($params);
-        }
-
-        return $this->requestViaClient($params, $userId);
-    }
-
-    /**
-     * Instead of calling OpenAI directly, leave the request for the user's
-     * browser to pick up. The browser polls for pending requests, makes the
-     * HTTP call itself, and posts the raw result back — it acts as a plain
-     * proxy, nothing else.
-     *
-     * @param  array<string, mixed>  $params
-     */
-    private function requestViaClient(array $params, int $userId): CreateResponse
-    {
-        $aiRequest = AiRequest::create([
-            'user_id' => $userId,
-            'payload' => $params,
-            'status' => 'pending',
-        ]);
-
-        $deadline = now()->addSeconds((int) config('ai.client_timeout'));
-
-        while (now()->lt($deadline)) {
-            $aiRequest->refresh();
-
-            if ($aiRequest->status === 'completed') {
-                return CreateResponse::from($aiRequest->response, MetaInformation::from([]));
-            }
-
-            if ($aiRequest->status === 'failed') {
-                Log::error('CourseGeneratorService client relay failed', [
-                    'ai_request_id' => $aiRequest->id,
-                    'error' => $aiRequest->error,
-                ]);
-
-                throw new RuntimeException('Клиент не смог выполнить запрос к OpenAI.');
-            }
-
-            usleep(500_000);
-        }
-
-        Log::error('CourseGeneratorService client relay timed out', ['ai_request_id' => $aiRequest->id]);
-
-        throw new RuntimeException('Истекло время ожидания ответа от клиента.');
     }
 }

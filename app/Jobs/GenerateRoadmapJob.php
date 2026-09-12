@@ -28,7 +28,7 @@ class GenerateRoadmapJob implements ShouldQueue
             return;
         }
 
-        $roadmap = $generator->generateRoadmap($course->topic, $course->level, $course->user_id);
+        $roadmap = $generator->generateRoadmap($course->topic, $course->level);
 
         $stepIdsRequiringTest = DB::transaction(function () use ($course, $roadmap) {
             $course->update([
@@ -38,29 +38,48 @@ class GenerateRoadmapJob implements ShouldQueue
             ]);
 
             $stepIdsRequiringTest = [];
+            $isFirstChildOverall = true;
 
-            foreach ($roadmap['steps'] as $index => $step) {
-                $courseStep = $course->steps()->create([
-                    'order' => $index + 1,
-                    'title' => $step['title'],
-                    'description' => $step['description'],
-                    'requires_test' => $step['requires_test'],
-                    'estimated_days' => $step['estimated_days'],
-                    'status' => $index === 0 ? 'available' : 'locked',
-                    'started_at' => $index === 0 ? now() : null,
+            foreach ($roadmap['modules'] as $moduleIndex => $module) {
+                $parentStep = $course->steps()->create([
+                    'order' => $moduleIndex + 1,
+                    'title' => $module['title'],
+                    'description' => $module['description'],
                 ]);
 
-                foreach ($step['resources'] as $resource) {
-                    $courseStep->resources()->create([
-                        'title' => $resource['title'],
-                        'url' => $resource['url'],
-                        'type' => $resource['type'],
-                    ]);
-                }
+                $lastStepIndex = array_key_last($module['steps']);
 
-                if ($step['requires_test']) {
-                    $courseStep->test()->create(['status' => 'not_started']);
-                    $stepIdsRequiringTest[] = $courseStep->id;
+                foreach ($module['steps'] as $stepIndex => $step) {
+                    // Every section must end in a checkpoint: force a test on its
+                    // last lesson even if the model didn't flag one, so a student
+                    // can never finish a whole section without being tested on it.
+                    $requiresTest = $step['requires_test'] || $stepIndex === $lastStepIndex;
+
+                    $childStep = $parentStep->children()->create([
+                        'course_id' => $course->id,
+                        'order' => $stepIndex + 1,
+                        'title' => $step['title'],
+                        'description' => $step['description'],
+                        'requires_test' => $requiresTest,
+                        'estimated_days' => $step['estimated_days'],
+                        'status' => $isFirstChildOverall ? 'available' : 'locked',
+                        'started_at' => $isFirstChildOverall ? now() : null,
+                    ]);
+
+                    $isFirstChildOverall = false;
+
+                    foreach ($step['resources'] as $resource) {
+                        $childStep->resources()->create([
+                            'title' => $resource['title'],
+                            'url' => $resource['url'],
+                            'type' => $resource['type'],
+                        ]);
+                    }
+
+                    if ($requiresTest) {
+                        $childStep->test()->create(['status' => 'not_started']);
+                        $stepIdsRequiringTest[] = $childStep->id;
+                    }
                 }
             }
 

@@ -17,7 +17,7 @@ class CourseController extends Controller
 {
     public function index(Request $request)
     {
-        $courses = $request->user()->courses()->with('steps')->latest()->get();
+        $courses = $request->user()->courses()->with('steps.children')->latest()->get();
 
         return CourseResource::collection($courses);
     }
@@ -58,7 +58,7 @@ class CourseController extends Controller
     {
         Gate::authorize('view', $course);
 
-        $course->load(['placementTest.questions', 'steps.resources', 'steps.test']);
+        $course->load(['placementTest.questions', 'steps.children.resources', 'steps.children.test']);
 
         return new CourseResource($course);
     }

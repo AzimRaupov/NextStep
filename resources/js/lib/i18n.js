@@ -20,12 +20,10 @@ function detectInitialLocale() {
             return stored;
         }
     } catch {
-        // localStorage can be unavailable in a locked-down webview — fall through to detection.
+        // localStorage can be unavailable in a locked-down webview — fall through to the default.
     }
 
-    const browserLanguage = (navigator.language || '').slice(0, 2).toLowerCase();
-
-    return supported.includes(browserLanguage) ? browserLanguage : DEFAULT_LOCALE;
+    return DEFAULT_LOCALE;
 }
 
 // Module-scoped singleton so every component that imports `locale` shares the

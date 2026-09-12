@@ -6,6 +6,7 @@ use App\Support\LevelResolver;
 use App\Support\PaceCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Collection;
 
 class CourseResource extends JsonResource
 {
@@ -27,13 +28,24 @@ class CourseResource extends JsonResource
                 'score' => $this->placementTest->score,
                 'questions' => PlacementQuestionResource::collection($this->placementTest->questions),
             ] : null),
-            'steps' => $this->whenLoaded('steps', fn () => CourseStepResource::collection($this->steps)),
-            'pace' => $this->whenLoaded('steps', fn () => PaceCalculator::forCourse($this->steps)),
+            'steps' => $this->whenLoaded('steps', fn () => CourseModuleResource::collection(
+                $this->steps->whereNull('parent_id')->sortBy('order')->values()
+            )),
+            'pace' => $this->whenLoaded('steps', fn () => PaceCalculator::forCourse($this->childSteps())),
             'progress' => $this->whenLoaded('steps', fn () => [
-                'completed' => $this->steps->where('status', 'completed')->count(),
-                'total' => $this->steps->count(),
+                'completed' => $this->childSteps()->where('status', 'completed')->count(),
+                'total' => $this->childSteps()->count(),
             ]),
             'created_at' => $this->created_at,
         ];
+    }
+
+    /**
+     * The actionable lessons across every section — used for progress and
+     * pace, which only make sense at the lesson level, not the section.
+     */
+    private function childSteps(): Collection
+    {
+        return $this->steps->whereNotNull('parent_id');
     }
 }

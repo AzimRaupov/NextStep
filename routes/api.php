@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\Api\AiRequestController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\CourseStepController;
@@ -26,9 +25,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/courses/{course}/retry', [CourseController::class, 'retry']);
 
     Route::post('/courses/{course}/placement-test/submit', [PlacementTestController::class, 'submit']);
-
-    Route::get('/ai-requests/pending', [AiRequestController::class, 'pending']);
-    Route::post('/ai-requests/{aiRequest}/complete', [AiRequestController::class, 'complete']);
 
     Route::scopeBindings()->group(function () {
         Route::get('/courses/{course}/steps/{step}/test', [StepTestController::class, 'show']);

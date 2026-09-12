@@ -27,14 +27,17 @@ class GenerateStepTestJob implements ShouldQueue
             return;
         }
 
-        $questions = $generator->generateStepQuestions($step->course->topic, $step->title, $step->description, $step->course->user_id);
+        $questions = $generator->generateStepQuestions($step->course->topic, $step->title, $step->description);
 
         DB::transaction(function () use ($step, $questions) {
             foreach ($questions as $index => $question) {
+                $options = $question['options'];
+                shuffle($options);
+
                 $step->test->questions()->create([
                     'order' => $index + 1,
                     'question' => $question['question'],
-                    'options' => $question['options'],
+                    'options' => $options,
                     'correct_option' => $question['correct_option'],
                 ]);
             }
