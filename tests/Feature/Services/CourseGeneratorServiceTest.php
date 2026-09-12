@@ -1,6 +1,5 @@
 <?php
 
-use App\Events\AiRequestCreated;
 use App\Models\AiRequest;
 use App\Models\User;
 use App\Services\CourseGeneratorService;
@@ -76,8 +75,11 @@ it('relays the request to the browser and uses its response when AI_REQUEST_MODE
 
     $user = User::factory()->create();
 
-    Event::listen(AiRequestCreated::class, function (AiRequestCreated $event) {
-        $event->aiRequest->update([
+    // Simulates the browser's poll-and-relay loop completing the request
+    // the instant it is created, so the service's wait loop returns
+    // immediately instead of actually polling for up to the real timeout.
+    Event::listen('eloquent.created: '.AiRequest::class, function (AiRequest $aiRequest) {
+        $aiRequest->update([
             'status' => 'completed',
             'response' => fakeOpenAiTextAttributes('Ответ из браузера.'),
         ]);
@@ -104,8 +106,8 @@ it('throws when the browser reports it could not reach OpenAI', function () {
 
     $user = User::factory()->create();
 
-    Event::listen(AiRequestCreated::class, function (AiRequestCreated $event) {
-        $event->aiRequest->update([
+    Event::listen('eloquent.created: '.AiRequest::class, function (AiRequest $aiRequest) {
+        $aiRequest->update([
             'status' => 'failed',
             'error' => 'Сеть недоступна.',
         ]);
