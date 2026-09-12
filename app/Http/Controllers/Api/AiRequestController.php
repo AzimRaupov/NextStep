@@ -5,20 +5,35 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CompleteAiRequestRequest;
 use App\Models\AiRequest;
-use Illuminate\Support\Facades\Gate;
+use Illuminate\Http\Request;
 
 class AiRequestController extends Controller
 {
-    public function show(AiRequest $aiRequest)
+    /**
+     * The browser polls this endpoint instead of listening for a push
+     * notification. Every pending request for the user is claimed
+     * (marked "processing") in the same call, so a second poll tick
+     * before the browser finishes relaying it does not pick it up again.
+     */
+    public function pending(Request $request)
     {
-        Gate::authorize('view', $aiRequest);
+        $aiRequests = AiRequest::where('user_id', $request->user()->id)
+            ->where('status', 'pending')
+            ->get();
 
-        return response()->json(['payload' => $aiRequest->payload]);
+        AiRequest::whereIn('id', $aiRequests->pluck('id'))->update(['status' => 'processing']);
+
+        return response()->json([
+            'data' => $aiRequests->map(fn (AiRequest $aiRequest) => [
+                'id' => $aiRequest->id,
+                'payload' => $aiRequest->payload,
+            ]),
+        ]);
     }
 
     public function complete(CompleteAiRequestRequest $request, AiRequest $aiRequest)
     {
-        abort_if($aiRequest->status !== 'pending', 409, 'Запрос уже обработан.');
+        abort_if(in_array($aiRequest->status, ['completed', 'failed'], true), 409, 'Запрос уже обработан.');
 
         if ($request->filled('error')) {
             $aiRequest->update([

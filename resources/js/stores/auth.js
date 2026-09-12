@@ -17,7 +17,7 @@ export const useAuthStore = defineStore('auth', {
                 const { data } = await api.get('/api/user');
                 this.user = data.user;
                 this.syncLocale();
-                startAiRelay(this.user.id);
+                startAiRelay();
             } catch {
                 this.user = null;
             } finally {
@@ -29,14 +29,14 @@ export const useAuthStore = defineStore('auth', {
             const { data } = await api.post('/api/login', payload);
             this.user = data.user;
             this.syncLocale();
-            startAiRelay(this.user.id);
+            startAiRelay();
         },
         async register(payload) {
             await ensureCsrfCookie();
             const { data } = await api.post('/api/register', payload);
             this.user = data.user;
             this.syncLocale();
-            startAiRelay(this.user.id);
+            startAiRelay();
         },
         async logout() {
             await api.post('/api/logout');

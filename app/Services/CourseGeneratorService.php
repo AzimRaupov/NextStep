@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Events\AiRequestCreated;
 use App\Models\AiRequest;
 use App\Support\LevelResolver;
 use Illuminate\Support\Facades\Log;
@@ -320,10 +319,10 @@ TEXT;
     }
 
     /**
-     * Instead of calling OpenAI directly, broadcast the request to the
-     * user's browser over Reverb and wait for it to relay back the raw
-     * OpenAI response. The browser acts as a plain proxy: it makes the
-     * HTTP call and posts the result back, nothing else.
+     * Instead of calling OpenAI directly, leave the request for the user's
+     * browser to pick up. The browser polls for pending requests, makes the
+     * HTTP call itself, and posts the raw result back — it acts as a plain
+     * proxy, nothing else.
      *
      * @param  array<string, mixed>  $params
      */
@@ -334,8 +333,6 @@ TEXT;
             'payload' => $params,
             'status' => 'pending',
         ]);
-
-        event(new AiRequestCreated($aiRequest));
 
         $deadline = now()->addSeconds((int) config('ai.client_timeout'));
 

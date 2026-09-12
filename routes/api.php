@@ -27,7 +27,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/courses/{course}/placement-test/submit', [PlacementTestController::class, 'submit']);
 
-    Route::get('/ai-requests/{aiRequest}', [AiRequestController::class, 'show']);
+    Route::get('/ai-requests/pending', [AiRequestController::class, 'pending']);
     Route::post('/ai-requests/{aiRequest}/complete', [AiRequestController::class, 'complete']);
 
     Route::scopeBindings()->group(function () {

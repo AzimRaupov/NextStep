@@ -6,35 +6,37 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 
 uses(LazilyRefreshDatabase::class);
 
-describe('show', function () {
+describe('pending', function () {
     it('returns 401 when no user is authenticated', function () {
-        $aiRequest = AiRequest::factory()->create();
-
-        $response = $this->getJson("/api/ai-requests/{$aiRequest->id}");
+        $response = $this->getJson('/api/ai-requests/pending');
 
         $response->assertStatus(401);
     });
 
-    it('forbids fetching a request that belongs to another user', function () {
-        $aiRequest = AiRequest::factory()->create();
+    it('returns only the pending requests belonging to the current user', function () {
+        $user = User::factory()->create();
 
-        $response = $this->actingAs(User::factory()->create())
-            ->getJson("/api/ai-requests/{$aiRequest->id}");
+        $mine = AiRequest::factory()->create(['user_id' => $user->id, 'status' => 'pending']);
+        AiRequest::factory()->create(['user_id' => $user->id, 'status' => 'completed']);
+        AiRequest::factory()->create(['status' => 'pending']);
 
-        $response->assertStatus(403);
-    });
-
-    it('returns the payload for the owner', function () {
-        $aiRequest = AiRequest::factory()->create([
-            'payload' => ['model' => 'gpt-5-nano', 'instructions' => 'Составь дорожную карту.'],
-        ]);
-
-        $response = $this->actingAs($aiRequest->user)
-            ->getJson("/api/ai-requests/{$aiRequest->id}");
+        $response = $this->actingAs($user)->getJson('/api/ai-requests/pending');
 
         $response->assertOk();
-        $response->assertJsonPath('payload.model', 'gpt-5-nano');
-        $response->assertJsonPath('payload.instructions', 'Составь дорожную карту.');
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.id', $mine->id);
+        $response->assertJsonPath('data.0.payload', $mine->payload);
+    });
+
+    it('claims returned requests so a second poll does not pick them up again', function () {
+        $user = User::factory()->create();
+        $aiRequest = AiRequest::factory()->create(['user_id' => $user->id, 'status' => 'pending']);
+
+        $this->actingAs($user)->getJson('/api/ai-requests/pending')->assertJsonCount(1, 'data');
+
+        expect($aiRequest->fresh()->status)->toBe('processing');
+
+        $this->actingAs($user)->getJson('/api/ai-requests/pending')->assertJsonCount(0, 'data');
     });
 });
 
@@ -72,7 +74,7 @@ describe('complete', function () {
     });
 
     it('marks the request completed and stores the relayed response', function () {
-        $aiRequest = AiRequest::factory()->create();
+        $aiRequest = AiRequest::factory()->create(['status' => 'processing']);
 
         $response = $this->actingAs($aiRequest->user)
             ->postJson("/api/ai-requests/{$aiRequest->id}/complete", [
@@ -88,7 +90,7 @@ describe('complete', function () {
     });
 
     it('marks the request failed and stores the relayed error', function () {
-        $aiRequest = AiRequest::factory()->create();
+        $aiRequest = AiRequest::factory()->create(['status' => 'processing']);
 
         $response = $this->actingAs($aiRequest->user)
             ->postJson("/api/ai-requests/{$aiRequest->id}/complete", [

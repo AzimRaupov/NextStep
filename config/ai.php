@@ -8,8 +8,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | "server": the backend calls the OpenAI API directly (default).
-    | "client": the backend broadcasts the request over Reverb and the
-    | browser calls OpenAI and relays the raw response back to the backend.
+    | "client": the browser polls for pending requests, calls OpenAI itself,
+    | and relays the raw response back to the backend.
     |
     */
 
