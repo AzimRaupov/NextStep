@@ -22,9 +22,12 @@ return [
     |
     | How many seconds the backend waits for the browser to relay back the
     | OpenAI response when running in "client" mode, before giving up.
+    | Roadmap generation is the slowest call and can take over a minute
+    | end-to-end (browser poll delay + the OpenAI call itself), so this
+    | needs real headroom above that, not just above a typical chat reply.
     |
     */
 
-    'client_timeout' => (int) env('AI_CLIENT_TIMEOUT', 90),
+    'client_timeout' => (int) env('AI_CLIENT_TIMEOUT', 240),
 
 ];
