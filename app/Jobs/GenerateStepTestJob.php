@@ -15,7 +15,7 @@ class GenerateStepTestJob implements ShouldQueue
 
     public int $tries = 2;
 
-    public int $timeout = 180;
+    public int $timeout = 600;
 
     public function __construct(public int $stepId) {}
 
@@ -27,7 +27,7 @@ class GenerateStepTestJob implements ShouldQueue
             return;
         }
 
-        $questions = $generator->generateStepQuestions($step->course->topic, $step->title, $step->description);
+        $questions = $generator->generateStepQuestions($step->course->topic, $step->title, $step->description, $step->course->user_id);
 
         DB::transaction(function () use ($step, $questions) {
             foreach ($questions as $index => $question) {

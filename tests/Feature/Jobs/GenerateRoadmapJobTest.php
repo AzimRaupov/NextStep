@@ -52,7 +52,7 @@ it('dispatches a background test-generation job for every step that requires a t
     $generator = Mockery::mock(CourseGeneratorService::class);
     $generator->shouldReceive('generateRoadmap')
         ->once()
-        ->with($course->topic, $course->level)
+        ->with($course->topic, $course->level, $course->user_id)
         ->andReturn(fakeRoadmap());
 
     (new GenerateRoadmapJob($course->id))->handle($generator);

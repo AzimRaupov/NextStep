@@ -15,7 +15,7 @@ class GeneratePlacementTestJob implements ShouldQueue
 
     public int $tries = 2;
 
-    public int $timeout = 180;
+    public int $timeout = 600;
 
     public function __construct(public int $courseId) {}
 
@@ -27,7 +27,7 @@ class GeneratePlacementTestJob implements ShouldQueue
             return;
         }
 
-        $questions = $generator->generatePlacementQuestions($course->topic);
+        $questions = $generator->generatePlacementQuestions($course->topic, $course->user_id);
 
         DB::transaction(function () use ($course, $questions) {
             foreach ($questions as $index => $question) {

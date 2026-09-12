@@ -2,14 +2,18 @@
 
 namespace App\Services;
 
+use App\Events\AiRequestCreated;
+use App\Models\AiRequest;
 use App\Support\LevelResolver;
 use Illuminate\Support\Facades\Log;
 use OpenAI\Laravel\Facades\OpenAI;
+use OpenAI\Responses\Meta\MetaInformation;
+use OpenAI\Responses\Responses\CreateResponse;
 use RuntimeException;
 
 class CourseGeneratorService
 {
-    public function generatePlacementQuestions(string $topic): array
+    public function generatePlacementQuestions(string $topic, int $userId): array
     {
         $count = config('course.placement_question_count');
 
@@ -49,12 +53,12 @@ class CourseGeneratorService
 совпадать с одним из вариантов в options. Пиши на русском языке.
 TEXT;
 
-        $data = $this->requestStructured($instructions, 'placement_test', $schema);
+        $data = $this->requestStructured($instructions, 'placement_test', $schema, $userId);
 
         return $data['questions'];
     }
 
-    public function generateRoadmap(string $topic, string $level): array
+    public function generateRoadmap(string $topic, string $level, int $userId): array
     {
         ['min' => $min, 'max' => $max] = $this->roadmapStepBounds($level);
         $levelLabel = LevelResolver::label($level);
@@ -153,7 +157,7 @@ TEXT;
 Пиши на русском языке.
 TEXT;
 
-        return $this->requestStructured($instructions, 'course_roadmap', $schema);
+        return $this->requestStructured($instructions, 'course_roadmap', $schema, $userId);
     }
 
     /**
@@ -179,7 +183,7 @@ TEXT;
         };
     }
 
-    public function generateStepQuestions(string $topic, string $stepTitle, string $stepDescription): array
+    public function generateStepQuestions(string $topic, string $stepTitle, string $stepDescription, int $userId): array
     {
         $count = config('course.step_question_count');
 
@@ -219,12 +223,12 @@ TEXT;
 из вариантов в options. Пиши на русском языке.
 TEXT;
 
-        $data = $this->requestStructured($instructions, 'step_test', $schema);
+        $data = $this->requestStructured($instructions, 'step_test', $schema, $userId);
 
         return $data['questions'];
     }
 
-    public function answerStepQuestion(string $topic, string $stepTitle, string $stepDescription, array $history, string $question): string
+    public function answerStepQuestion(string $topic, string $stepTitle, string $stepDescription, array $history, string $question, int $userId): string
     {
         $instructions = <<<TEXT
 Ты — ИИ-репетитор образовательной платформы. Ученик проходит курс по теме
@@ -246,11 +250,11 @@ TEXT;
 
         $input[] = ['role' => 'user', 'content' => $question];
 
-        $response = OpenAI::responses()->create([
+        $response = $this->createResponse([
             'model' => config('course.model'),
             'instructions' => $instructions,
             'input' => $input,
-        ]);
+        ], $userId);
 
         if ($response->outputText === null || trim($response->outputText) === '') {
             Log::error('CourseGeneratorService empty chat response', ['step' => $stepTitle]);
@@ -261,9 +265,9 @@ TEXT;
         return trim($response->outputText);
     }
 
-    private function requestStructured(string $instructions, string $schemaName, array $schema): array
+    private function requestStructured(string $instructions, string $schemaName, array $schema, int $userId): array
     {
-        $response = OpenAI::responses()->create([
+        $response = $this->createResponse([
             'model' => config('course.model'),
             'instructions' => $instructions,
             'input' => 'Сгенерируй результат строго в соответствии со схемой.',
@@ -275,7 +279,7 @@ TEXT;
                     'strict' => true,
                 ],
             ],
-        ]);
+        ], $userId);
 
         if ($response->status === 'incomplete') {
             Log::error('CourseGeneratorService incomplete response', [
@@ -301,5 +305,61 @@ TEXT;
         }
 
         return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     */
+    private function createResponse(array $params, int $userId): CreateResponse
+    {
+        if (config('ai.request_mode') !== 'client') {
+            return OpenAI::responses()->create($params);
+        }
+
+        return $this->requestViaClient($params, $userId);
+    }
+
+    /**
+     * Instead of calling OpenAI directly, broadcast the request to the
+     * user's browser over Reverb and wait for it to relay back the raw
+     * OpenAI response. The browser acts as a plain proxy: it makes the
+     * HTTP call and posts the result back, nothing else.
+     *
+     * @param  array<string, mixed>  $params
+     */
+    private function requestViaClient(array $params, int $userId): CreateResponse
+    {
+        $aiRequest = AiRequest::create([
+            'user_id' => $userId,
+            'payload' => $params,
+            'status' => 'pending',
+        ]);
+
+        event(new AiRequestCreated($aiRequest));
+
+        $deadline = now()->addSeconds((int) config('ai.client_timeout'));
+
+        while (now()->lt($deadline)) {
+            $aiRequest->refresh();
+
+            if ($aiRequest->status === 'completed') {
+                return CreateResponse::from($aiRequest->response, MetaInformation::from([]));
+            }
+
+            if ($aiRequest->status === 'failed') {
+                Log::error('CourseGeneratorService client relay failed', [
+                    'ai_request_id' => $aiRequest->id,
+                    'error' => $aiRequest->error,
+                ]);
+
+                throw new RuntimeException('Клиент не смог выполнить запрос к OpenAI.');
+            }
+
+            usleep(500_000);
+        }
+
+        Log::error('CourseGeneratorService client relay timed out', ['ai_request_id' => $aiRequest->id]);
+
+        throw new RuntimeException('Истекло время ожидания ответа от клиента.');
     }
 }

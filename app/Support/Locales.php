@@ -4,7 +4,7 @@ namespace App\Support;
 
 class Locales
 {
-    public const DEFAULT = 'ru';
+    public const DEFAULT = 'tg';
 
     /**
      * @return array<int, string>
