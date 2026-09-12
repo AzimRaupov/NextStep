@@ -16,7 +16,7 @@ class GenerateRoadmapJob implements ShouldQueue
 
     public int $tries = 2;
 
-    public int $timeout = 900;
+    public int $timeout = 600;
 
     public function __construct(public int $courseId) {}
 
@@ -28,7 +28,7 @@ class GenerateRoadmapJob implements ShouldQueue
             return;
         }
 
-        $roadmap = $generator->generateRoadmap($course->topic, $course->level);
+        $roadmap = $generator->generateRoadmap($course->topic, $course->level, $course->user_id);
 
         $stepIdsRequiringTest = DB::transaction(function () use ($course, $roadmap) {
             $course->update([

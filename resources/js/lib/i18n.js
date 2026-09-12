@@ -2,7 +2,7 @@ import { ref } from 'vue';
 import { messages } from './messages';
 
 const STORAGE_KEY = 'lms.locale';
-const DEFAULT_LOCALE = 'ru';
+const DEFAULT_LOCALE = 'tg';
 
 export const locales = [
     { value: 'ru', label: 'Русский' },

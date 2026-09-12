@@ -1,6 +1,4 @@
 <script setup>
-import { locale, locales, setLocale } from '../lib/i18n';
-
 defineProps({
     title: { type: String, required: true },
     subtitle: { type: String, default: '' },
@@ -10,14 +8,6 @@ defineProps({
 <template>
     <div class="flex min-h-screen items-center justify-center bg-white px-6 py-12">
         <div class="w-full max-w-sm">
-            <select
-                :value="locale"
-                class="mx-auto mb-8 block cursor-pointer rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs font-medium text-neutral-600 focus:border-neutral-900 focus:outline-none"
-                @change="setLocale($event.target.value)"
-            >
-                <option v-for="option in locales" :key="option.value" :value="option.value">{{ option.label }}</option>
-            </select>
-
             <div class="mb-10 text-center">
                 <div class="mx-auto mb-6 flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-900">
                     <span class="text-sm font-semibold text-white">R</span>
